@@ -12,21 +12,306 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Organize and fix Android project files
+      - name: Organize and update Android project files
         run: |
           mkdir -p app/src/main/java/com/aayush/voiceai
           mkdir -p app/src/main/res/layout
           mkdir -p app/src/main/res/values
           [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/
-          [ -f MainActivity.kt ] && mv MainActivity.kt app/src/main/java/com/aayush/voiceai/
           [ -f activity_main.xml ] && mv activity_main.xml app/src/main/res/layout/
-          python3 -c '
-          import re
-          p = "app/src/main/java/com/aayush/voiceai/MainActivity.kt"
-          s = open(p).read()
-          s = re.sub(r"(?<!\\)\\([+dsDb])", r"\\\\\1", s)
-          open(p, "w").write(s)
-          '
+
+          cat << 'EOF' > app/src/main/java/com/aayush/voiceai/MainActivity.kt
+          package com.aayush.voiceai
+
+          import android.Manifest
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.net.Uri
+          import android.os.Bundle
+          import android.provider.ContactsContract
+          import android.speech.RecognitionListener
+          import android.speech.RecognizerIntent
+          import android.speech.SpeechRecognizer
+          import android.speech.tts.TextToSpeech
+          import android.telephony.SmsManager
+          import android.widget.Button
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.ActivityCompat
+          import androidx.core.content.ContextCompat
+          import java.net.URLEncoder
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+
+          class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+
+              private lateinit var tvStatus: TextView
+              private lateinit var tvHeard: TextView
+              private lateinit var tvReply: TextView
+              private lateinit var btnMic: Button
+
+              private var speechRecognizer: SpeechRecognizer? = null
+              private var tts: TextToSpeech? = null
+              private var isListening = false
+
+              private val requiredPermissions = arrayOf(
+                  Manifest.permission.RECORD_AUDIO,
+                  Manifest.permission.CALL_PHONE,
+                  Manifest.permission.READ_CONTACTS,
+                  Manifest.permission.SEND_SMS
+              )
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  tvStatus = findViewById(R.id.tvStatus)
+                  tvHeard = findViewById(R.id.tvHeard)
+                  tvReply = findViewById(R.id.tvReply)
+                  btnMic = findViewById(R.id.btnMic)
+
+                  tts = TextToSpeech(this, this)
+                  requestMissingPermissions()
+
+                  speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                      setRecognitionListener(object : RecognitionListener {
+                          override fun onReadyForSpeech(params: Bundle?) {
+                              tvStatus.text = "Sun raha hoon... Boliye!"
+                          }
+                          override fun onBeginningOfSpeech() {}
+                          override fun onRmsChanged(rmsdB: Float) {}
+                          override fun onBufferReceived(buffer: ByteArray?) {}
+                          override fun onEndOfSpeech() {
+                              tvStatus.text = "Process kar raha hoon..."
+                          }
+                          override fun onError(error: Int) {
+                              isListening = false
+                              btnMic.text = "SPEAK"
+                              tvStatus.text = "Mic error ($error). Dobara try karein."
+                          }
+                          override fun onResults(results: Bundle?) {
+                              isListening = false
+                              btnMic.text = "SPEAK"
+                              val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                              val cmd = matches?.firstOrNull().orEmpty()
+                              if (cmd.isNotBlank()) {
+                                  tvHeard.text = "You: $cmd"
+                                  handleCommand(cmd)
+                              }
+                          }
+                          override fun onPartialResults(partialResults: Bundle?) {
+                              val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                              if (!partial.isNullOrBlank()) tvHeard.text = partial
+                          }
+                          override fun onEvent(eventType: Int, params: Bundle?) {}
+                      })
+                  }
+
+                  btnMic.setOnClickListener {
+                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                          requestMissingPermissions()
+                          return@setOnClickListener
+                      }
+                      if (!isListening) startListening() else stopListening()
+                  }
+              }
+
+              private fun requestMissingPermissions() {
+                  val missing = requiredPermissions.filter {
+                      ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+                  }
+                  if (missing.isNotEmpty()) {
+                      ActivityCompat.requestPermissions(this, missing.toTypedArray(), 101)
+                  }
+              }
+
+              private fun startListening() {
+                  val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                      putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                      putExtra(RecognizerIntent.EXTRA_LANGUAGE, "hi-IN")
+                      putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                  }
+                  isListening = true
+                  btnMic.text = "STOP"
+                  speechRecognizer?.startListening(intent)
+              }
+
+              private fun stopListening() {
+                  isListening = false
+                  btnMic.text = "SPEAK"
+                  speechRecognizer?.stopListening()
+              }
+
+              private fun handleCommand(rawCmd: String) {
+                  val lower = rawCmd.lowercase(Locale.getDefault())
+
+                  // 1. CALL
+                  val isCall = listOf("call", "phone", "dial", "कॉल", "फोन", "फ़ोन", "लगाओ").any { lower.contains(it) }
+                  if (isCall) {
+                      val number = findPhoneNumber(rawCmd)
+                      if (number != null) {
+                          replyAndSpeak("$number par call laga raha hoon.")
+                          val callIntent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$number"))
+                          if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                              startActivity(callIntent)
+                          } else {
+                              startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
+                          }
+                      } else {
+                          replyAndSpeak("Contact nahi mila. Naam ya phone number saaf bolein.")
+                      }
+                      return
+                  }
+
+                  // 2. WHATSAPP / SMS MESSAGE
+                  val isMsg = listOf("whatsapp", "whats app", "व्हाट्सएप", "व्हाट्सऐप", "message", "msg", "sms", "मैसेज", "संदेश").any { lower.contains(it) }
+                  if (isMsg) {
+                      val number = findPhoneNumber(rawCmd)
+                      if (number != null) {
+                          val msgText = extractMessageBody(rawCmd)
+                          if (lower.contains("sms")) {
+                              if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED) {
+                                  SmsManager.getDefault().sendTextMessage(number, null, msgText, null, null)
+                                  replyAndSpeak("$number ko SMS bhej diya gaya hai.")
+                              } else {
+                                  val smsIntent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:$number")).apply {
+                                      putExtra("sms_body", msgText)
+                                  }
+                                  startActivity(smsIntent)
+                                  replyAndSpeak("SMS app khol raha hoon.")
+                              }
+                          } else {
+                              val waNumber = normalizeIndianPhone(number)
+                              val url = "https://wa.me/$waNumber?text=${URLEncoder.encode(msgText, "UTF-8")}"
+                              startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                              replyAndSpeak("WhatsApp par message khol raha hoon.")
+                          }
+                      } else {
+                          replyAndSpeak("Message bhejne ke liye contact ka naam ya number bolein.")
+                      }
+                      return
+                  }
+
+                  // 3. PLAY VIDEO (YOUTUBE)
+                  val isVideo = listOf("video", "play", "youtube", "chalao", "chala", "song", "वीडियो", "यूट्यूब", "चलाओ", "चला", "बजाओ", "गाना").any { lower.contains(it) }
+                  if (isVideo) {
+                      var query = rawCmd
+                      listOf("play", "video", "youtube", "chalao", "chala", "karo", "dikhao", "वीडियो", "यूट्यूब", "चलाओ", "चला", "करो", "दिखाओ", "पर").forEach { w ->
+                          query = query.replace(w, "", ignoreCase = true)
+                      }
+                      query = query.trim().ifBlank { "trending" }
+                      val ytUrl = "https://www.youtube.com/results?search_query=${URLEncoder.encode(query, "UTF-8")}"
+                      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ytUrl)))
+                      replyAndSpeak("YouTube par $query chala raha hoon.")
+                      return
+                  }
+
+                  // 4. TIME
+                  val isTime = listOf("time", "samay", "baje", "टाइम", "समय", "बजे").any { lower.contains(it) }
+                  if (isTime) {
+                      val now = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                      replyAndSpeak("Abhi samay $now hai.")
+                      return
+                  }
+
+                  // 5. GOOGLE SEARCH
+                  val searchUrl = "https://www.google.com/search?q=${URLEncoder.encode(rawCmd, "UTF-8")}"
+                  startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(searchUrl)))
+                  replyAndSpeak("Google par search kar raha hoon.")
+              }
+
+              private fun transliterateHindi(text: String): String {
+                  val map = mapOf(
+                      'अ' to "a", 'आ' to "a", 'इ' to "i", 'ई' to "i", 'उ' to "u", 'ऊ' to "u",
+                      'ए' to "e", 'ऐ' to "ai", 'ओ' to "o", 'औ' to "au",
+                      'ा' to "a", 'ि' to "i", 'ी' to "i", 'ु' to "u", 'ू' to "u",
+                      'े' to "e", 'ै' to "ai", 'ो' to "o", 'ौ' to "au", 'ं' to "n",
+                      'क' to "k", 'ख' to "kh", 'ग' to "g", 'घ' to "gh",
+                      'च' to "ch", 'छ' to "chh", 'ज' to "j", 'झ' to "jh",
+                      'ट' to "t", 'ठ' to "th", 'ड' to "d", 'ढ' to "dh", 'ण' to "n",
+                      'त' to "t", 'थ' to "th", 'द' to "d", 'ध' to "dh", 'न' to "n",
+                      'प' to "p", 'फ' to "ph", 'ब' to "b", 'भ' to "bh", 'म' to "m",
+                      'य' to "y", 'र' to "r", 'ल' to "l", 'व' to "v",
+                      'श' to "sh", 'ष' to "sh", 'स' to "s", 'ह' to "h", '़' to ""
+                  )
+                  val sb = StringBuilder()
+                  for (ch in text) {
+                      sb.append(map[ch] ?: ch)
+                  }
+                  return sb.toString().lowercase(Locale.getDefault())
+              }
+
+              private fun findPhoneNumber(command: String): String? {
+                  val digitMatch = Regex("(\\+?\\d[\\d\\s-]{8,14}\\d)").find(command)
+                  if (digitMatch != null) {
+                      return digitMatch.value.replace(Regex("[\\s-]"), "")
+                  }
+
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+                      requestMissingPermissions()
+                      return null
+                  }
+
+                  val lowerCmd = command.lowercase(Locale.getDefault())
+                  val latinCmd = transliterateHindi(lowerCmd)
+
+                  contentResolver.query(
+                      ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                      arrayOf(
+                          ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                          ContactsContract.CommonDataKinds.Phone.NUMBER
+                      ),
+                      null, null, null
+                  )?.use { cursor ->
+                      val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                      val numIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                      while (cursor.moveToNext()) {
+                          val name = cursor.getString(nameIdx)?.lowercase(Locale.getDefault()) ?: continue
+                          val num = cursor.getString(numIdx)?.replace(Regex("[\\s-]"), "") ?: continue
+                          if (lowerCmd.contains(name) || latinCmd.contains(name)) return num
+                          val firstWord = name.split(" ").firstOrNull().orEmpty()
+                          if (firstWord.length >= 3 && (lowerCmd.contains(firstWord) || latinCmd.contains(firstWord))) {
+                              return num
+                          }
+                      }
+                  }
+                  return null
+              }
+
+              private fun extractMessageBody(command: String): String {
+                  var cleaned = command
+                  listOf("whatsapp", "whats app", "व्हाट्सएप", "व्हाट्सऐप", "message", "msg", "sms", "मैसेज", "भेजो", "करो", "को").forEach { w ->
+                      cleaned = cleaned.replace(w, "", ignoreCase = true)
+                  }
+                  return cleaned.trim().ifBlank { "Hello!" }
+              }
+
+              private fun normalizeIndianPhone(phone: String): String {
+                  val digits = phone.replace(Regex("\\D"), "")
+                  return if (digits.length == 10) "91$digits" else digits
+              }
+
+              private fun replyAndSpeak(text: String) {
+                  tvReply.text = "AI: $text"
+                  tvStatus.text = "Ready"
+                  tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "reply_id")
+              }
+
+              override fun onInit(status: Int) {
+                  if (status == TextToSpeech.SUCCESS) {
+                      tts?.language = Locale("hi", "IN")
+                  }
+              }
+
+              override fun onDestroy() {
+                  speechRecognizer?.destroy()
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          EOF
+
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
