@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aayush AI — Voice Assistant</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #090d16 65%);
+      color: #f8fafc;
+      min-height: 100vh;
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .orb-ring {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .orb-pulse {
+      position: absolute;
+      inset: -10px;
+      border-radius: 9999px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.45), rgba(14, 165, 233, 0.08) 70%);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+    .listening .orb-pulse {
+      opacity: 1;
+      animation: pulseRing 1.6s ease-in-out infinite;
+    }
+    @keyframes pulseRing {
+      0%, 100% { transform: scale(0.95); opacity: 0.55; }
+      50% { transform: scale(1.18); opacity: 0.95; }
+    }
+    .wave-bar {
+      width: 4px;
+      height: 8px;
+      border-radius: 9999px;
+      background: #38bdf8;
+      transition: height 0.15s ease;
+    }
+    .listening .wave-bar {
+      animation: wave 0.9s ease-in-out infinite;
+    }
+    .listening .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+    .listening .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+    .listening .wave-bar:nth-child(4) { animation-delay: 0.45s; }
+    .listening .wave-bar:nth-child(5) { animation-delay: 0.6s; }
+    @keyframes wave {
+      0%, 100% { height: 8px; }
+      50% { height: 26px; }
+    }
+  </style>
+</head>
+<body class="antialiased selection:bg-indigo-500/30">
+  <div class="max-w-4xl mx-auto px-4 py-5 sm:py-8 flex flex-col gap-5">
+    <!-- Header -->
+    <header class="glass rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white">Aayush Voice AI</h1>
+          <p class="text-xs text-slate-400">Call • Message • Video • Search</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="langSelect" aria-label="Voice Language" class="bg-slate-800/90 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="hi-IN">Hindi / Hinglish (hi-IN)</option>
+          <option value="en-IN">English India (en-IN)</option>
+        </select>
+        <button id="ttsToggleBtn" type="button" class="text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/90 text-emerald-400 hover:bg-slate-700/80 transition">
+          Voice Reply: ON
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="flex gap-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+      <button type="button" data-tab="assistant" class="tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-indigo-600 text-white transition">
+        Assistant
+      </button>
+      <button type="button" data-tab="contacts" class="tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition">
+        Contacts (<span id="contactCount">0</span>)
+      </button>
+      <button type="button" data-tab="commands" class="tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition">
+        Commands Guide
+      </button>
+    </nav>
+
+    <!-- TAB 1: ASSISTANT -->
+    <section id="tab-assistant" class="flex flex-col gap-5">
+      <!-- Voice Orb & Input Card -->
+      <div class="glass rounded-2xl p-6 flex flex-col items-center text-center gap-5">
+        <div id="orbContainer" class="orb-ring">
+          <div class="orb-pulse"></div>
+          <button id="micBtn" type="button" aria-label="Start Voice Command" class="relative z-10 w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 flex items-center justify-center shadow-xl shadow-indigo-500/30 hover:scale-105 active:scale-95 transition">
+            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+            </svg>
+          </button>
+        </div>
+
+        <div id="waveBars" class="flex items-center gap-1.5 h-7">
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+        </div>
+
+        <div>
+          <p id="statusText" class="text-sm font-medium text-indigo-300">Mic dabaiye aur command boliye</p>
+          <p id="transcriptPreview" class="text-xs text-slate-400 mt-1 min-h-[1rem]">Example: "Sintu Sir ko call karo" ya "Play Arijit Singh video"</p>
+        </div>
+
+        <!-- Text Command Fallback -->
+        <form id="commandForm" class="w-full flex gap-2">
+          <input id="commandInput" type="text" placeholder="Ya yahan command type karein (e.g. Call Sintu Sir, Play Physics video)..." class="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button type="submit" class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white transition">
+            Run
+          </button>
+        </form>
+
+        <!-- Quick Action Chips -->
+        <div class="flex flex-wrap justify-center gap-2 w-full">
+          <button type="button" data-cmd="Sintu Sir ko call karo" class="quick-cmd text-xs px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 hover:border-indigo-400 hover:text-white transition">
+            📞 Call Sintu Sir
+          </button>
+          <button type="button" data-cmd="Sintu Sir ko WhatsApp message bhejo Hello Sir" class="quick-cmd text-xs px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 hover:border-emerald-400 hover:text-white transition">
+            💬 WhatsApp Sintu Sir
+          </button>
+          <button type="button" data-cmd="Play motivational study video" class="quick-cmd text-xs px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 hover:border-rose-400 hover:text-white transition">
+            ▶️ Play Video
+          </button>
+          <button type="button" data-cmd="Time kya hua hai" class="quick-cmd text-xs px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 hover:border-cyan-400 hover:text-white transition">
+            🕒 Time Check
+          </button>
+          <button type="button" data-cmd="Timer 5 minute" class="quick-cmd text-xs px-3 py-1.5 rounded-full bg-slate-800/90 border border-slate-700 text-slate-300 hover:border-amber-400 hover:text-white transition">
+            ⏱️ 5m Timer
+          </button>
+        </div>
+      </div>
+
+      <!-- Active Timer Banner (hidden unless running) -->
+      <div id="timerBanner" class="hidden glass rounded-2xl p-4 flex items-center justify-between border-amber-500/40">
+        <div class="flex items-center gap-3">
+          <span class="text-xl">⏱️</span>
+          <div>
+            <p class="text-xs text-slate-400">Active Timer</p>
+            <p id="timerDisplay" class="text-lg font-bold text-amber-300">00:00</p>
+          </div>
+        </div>
+        <button id="cancelTimerBtn" type="button" class="text-xs px-3 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition">
+          Stop Timer
+        </button>
+      </div>
+
+      <!-- Activity & Action Feed -->
+      <div class="glass rounded-2xl p-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-200">Assistant Log & Actions</h2>
+          <button id="clearLogBtn" type="button" class="text-xs text-slate-400 hover:text-rose-400 transition">Clear Log</button>
+        </div>
+        <div id="logList" class="flex flex-col gap-3 max-h-96 overflow-y-auto pr-1"></div>
+      </div>
+    </section>
+
+    <!-- TAB 2: CONTACTS -->
+    <section id="tab-contacts" class="hidden flex flex-col gap-5">
+      <div class="glass rounded-2xl p-5">
+        <h2 class="text-base font-semibold text-white mb-3">Add New Contact</h2>
+        <form id="contactForm" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input id="contactName" type="text" required placeholder="Name (e.g. Aman Sir)" class="bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <input id="contactPhone" type="tel" required placeholder="Phone (e.g. 9876543210)" class="bg-slate-900/90 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button type="submit" class="rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white py-2.5 px-4 transition">
+            Save Contact
+          </button>
+        </form>
+      </div>
+
+      <div class="glass rounded-2xl p-5">
+        <h2 class="text-base font-semibold text-white mb-3">Saved Contacts</h2>
+        <div id="contactsList" class="flex flex-col gap-2.5"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: COMMANDS GUIDE -->
+    <section id="tab-commands" class="hidden flex flex-col gap-4">
+      <div class="glass rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+          <h3 class="text-sm font-semibold text-indigo-300 mb-1.5">📞 Phone Call</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            "Sintu Sir ko call karo"<br />
+            "Call 9876543210"<br />
+            "Call Aman"
+          </p>
+        </div>
+        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+          <h3 class="text-sm font-semibold text-emerald-300 mb-1.5">💬 WhatsApp / SMS</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            "Sintu Sir ko WhatsApp message bhejo Class 5 PM hai"<br />
+            "SMS Sintu Sir Hello"<br />
+            "Message 9876543210 Good morning"
+          </p>
+        </div>
+        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+          <h3 class="text-sm font-semibold text-rose-300 mb-1.5">▶️ Play Video (YouTube)</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            "Play NEET Physics lecture video"<br />
+            "YouTube par Arijit Singh song chalao"<br />
+            "Video play karo Khan Sir"
+          </p>
+        </div>
+        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+          <h3 class="text-sm font-semibold text-cyan-300 mb-1.5">🔍 Search, Time & Timer</h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            "Search Bihar Board Class 12 syllabus"<br />
+            "Time kya hua hai" / "Date batao"<br />
+            "Timer 10 minute"
+          </p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white shadow-xl"></div>
+
+  <script>
+    const STORAGE_CONTACTS_KEY = 'aayush_ai_contacts_v1';
+    const DEFAULT_CONTACTS = [
+      { id: 'c1', name: 'Sintu Sir', phone: '8210922041' }
+    ];
+
+    let contacts = [];
+    let logs = [];
+    let ttsEnabled = true;
+    let isListening = false;
+    let recognition = null;
+    let timerInterval = null;
+    let timerSecondsLeft = 0;
+
+    // Elements
+    const micBtn = document.getElementById('micBtn');
+    const orbContainer = document.getElementById('orbContainer');
+    const waveBars = document.getElementById('waveBars');
+    const statusText = document.getElementById('statusText');
+    const transcriptPreview = document.getElementById('transcriptPreview');
+    const commandForm = document.getElementById('commandForm');
+    const commandInput = document.getElementById('commandInput');
+    const langSelect = document.getElementById('langSelect');
+    const ttsToggleBtn = document.getElementById('ttsToggleBtn');
+    const logList = document.getElementById('logList');
+    const clearLogBtn = document.getElementById('clearLogBtn');
+    const contactForm = document.getElementById('contactForm');
+    const contactNameInput = document.getElementById('contactName');
+    const contactPhoneInput = document.getElementById('contactPhone');
+    const contactsList = document.getElementById('contactsList');
+    const contactCount = document.getElementById('contactCount');
+    const timerBanner = document.getElementById('timerBanner');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const cancelTimerBtn = document.getElementById('cancelTimerBtn');
+    const toastEl = document.getElementById('toast');
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.remove('hidden');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toastEl.classList.add('hidden'), 3000);
+    }
+
+    function loadContacts() {
+      try {
+        const raw = localStorage.getItem(STORAGE_CONTACTS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (e) {}
+      return [...DEFAULT_CONTACTS];
+    }
+
+    function saveContacts() {
+      try {
+        localStorage.setItem(STORAGE_CONTACTS_KEY, JSON.stringify(contacts));
+      } catch (e) {}
+    }
+
+    function speak(text) {
+      if (!ttsEnabled || !('speechSynthesis' in window)) return;
+      try {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = langSelect.value || 'hi-IN';
+        utter.rate = 1.0;
+        window.speechSynthesis.speak(utter);
+      } catch (e) {}
+    }
+
+    function formatTimeNow() {
+      return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function addLog(userCmd, aiReply, actionObj = null) {
+      logs.unshift({
+        id: 'log_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        time: formatTimeNow(),
+        userCmd,
+        aiReply,
+        actionObj
+      });
+      renderLogs();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function renderLogs() {
+      if (logs.length === 0) {
+        logList.innerHTML = '<p class="text-xs text-slate-500 text-center py-6">Abhi koi command nahi chala. Mic dabaiye ya upar quick button try karein.</p>';
+        return;
+      }
+      logList.innerHTML = logs.map(item => {
+        let actionBtnHtml = '';
+        if (item.actionObj && item.actionObj.href) {
+          actionBtnHtml = `<a href="${escapeHtml(item.actionObj.href)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600/90 hover:bg-indigo-500 text-white transition">${escapeHtml(item.actionObj.label)}</a>`;
+        }
+        return `
+          <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1.5">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span class="font-medium text-cyan-300">You: "${escapeHtml(item.userCmd)}"</span>
+              <span>${escapeHtml(item.time)}</span>
+            </div>
+            <p class="text-sm text-slate-100">${escapeHtml(item.aiReply)}</p>
+            ${actionBtnHtml ? `<div>${actionBtnHtml}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderContacts() {
+      contactCount.textContent = contacts.length;
+      if (contacts.length === 0) {
+        contactsList.innerHTML = '<p class="text-xs text-slate-500 py-4 text-center">Koi contact saved nahi hai.</p>';
+        return;
+      }
+      contactsList.innerHTML = contacts.map(c => `
+        <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+          <div>
+            <p class="text-sm font-medium text-white">${escapeHtml(c.name)}</p>
+            <p class="text-xs text-slate-400">${escapeHtml(c.phone)}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="tel:${escapeHtml(c.phone)}" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 text-xs transition">Call</a>
+            <a href="https://wa.me/${escapeHtml(normalizeWaPhone(c.phone))}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 text-xs transition">WhatsApp</a>
+            <button type="button" data-delete-id="${escapeHtml(c.id)}" class="delete-contact-btn px-2.5 py-1.5 rounded-lg bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 text-xs transition">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function normalizeWaPhone(phone) {
+      const digits = String(phone).replace(/\D/g, '');
+      if (digits.length === 10) return '91' + digits;
+      return digits;
+    }
+
+    function findContactOrPhone(text) {
+      const lower = text.toLowerCase();
+      for (const c of contacts) {
+        if (lower.includes(c.name.toLowerCase())) {
+          return { name: c.name, phone: c.phone };
+        }
+      }
+      const numMatch = text.match(/(\+?\d[\d\s-]{8,14}\d)/);
+      if (numMatch) {
+        const clean = numMatch[1].replace(/[\s-]/g, '');
+        return { name: clean, phone: clean };
+      }
+      return null;
+    }
+
+    function startTimer(minutes) {
+      clearInterval(timerInterval);
+      timerSecondsLeft = Math.max(1, Math.round(minutes * 60));
+      timerBanner.classList.remove('hidden');
+      const updateDisplay = () => {
+        const m = String(Math.floor(timerSecondsLeft / 60)).padStart(2, '0');
+        const s = String(timerSecondsLeft % 60).padStart(2, '0');
+        timerDisplay.textContent = `${m}:${s}`;
+      };
+      updateDisplay();
+      timerInterval = setInterval(() => {
+        timerSecondsLeft--;
+        if (timerSecondsLeft <= 0) {
+          clearInterval(timerInterval);
+          timerBanner.classList.add('hidden');
+          showToast('Timer poora ho gaya!');
+          speak('Aapka timer poora ho gaya hai.');
+          addLog('Timer', 'Timer complete ho gaya!');
+        } else {
+          updateDisplay();
+        }
+      }, 1000);
+    }
+
+    function triggerAction(href, newTab = false) {
+      try {
+        if (newTab) {
+          window.open(href, '_blank', 'noopener,noreferrer');
+        } else {
+          window.location.href = href;
+        }
+      } catch (e) {}
+    }
+
+    function processCommand(rawCmd) {
+      const cmd = rawCmd.trim();
+      if (!cmd) return;
+      const lower = cmd.toLowerCase();
+      transcriptPreview.textContent = `Heard: "${cmd}"`;
+
+      // 1. CALL COMMAND
+      if (/\b(call|phone|dial|फोन|कॉल)\b/i.test(lower)) {
+        const target = findContactOrPhone(cmd);
+        if (target) {
+          const telUrl = `tel:${target.phone}`;
+          const reply = `${target.name} (${target.phone}) ko call laga raha hoon.`;
+          speak(reply);
+          addLog(cmd, reply, { label: `📞 Call ${target.name}`, href: telUrl });
+          triggerAction(telUrl, false);
+        } else {
+          const reply = 'Kisko call karna hai? Contact list mein naam add karein ya phone number bolein.';
+          speak(reply);
+          addLog(cmd, reply);
+        }
+        return;
+      }
+
+      // 2. MESSAGE / WHATSAPP / SMS COMMAND
+      if (/\b(message|msg|whatsapp|sms|text|मैसेज|व्हाट्सएप)\b/i.test(lower)) {
+        const target = findContactOrPhone(cmd);
+        if (target) {
+          // Extract message body after keywords
+          let msgBody = cmd
+            .replace(new RegExp(target.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '')
+            .replace(/\b(ko|to|whatsapp|message|msg|sms|text|bhejo|send|karo|kar|do|मैसेज|भेजो|करो)\b/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!msgBody) msgBody = 'Hello!';
+          const isSms = /\bsms\b/i.test(lower);
+          const url = isSms
+            ? `sms:${target.phone}?body=${encodeURIComponent(msgBody)}`
+            : `https://wa.me/${normalizeWaPhone(target.phone)}?text=${encodeURIComponent(msgBody)}`;
+          const platform = isSms ? 'SMS' : 'WhatsApp';
+          const reply = `${target.name} ko ${platform} message taiyar hai: "${msgBody}"`;
+          speak(reply);
+          addLog(cmd, reply, { label: `💬 Open ${platform} (${target.name})`, href: url });
+          triggerAction(url, !isSms);
+        } else {
+          const reply = 'Message kisko bhejna hai? Pehle Contacts tab mein number save karein ya number bolein.';
+          speak(reply);
+          addLog(cmd, reply);
+        }
+        return;
+      }
+
+      // 3. VIDEO PLAY / YOUTUBE COMMAND
+      if (/\b(video|play|youtube|chalao|chala|song|gaana|वीडियो|चलाओ|गाना)\b/i.test(lower)) {
+        let query = cmd
+          .replace(/\b(play|video|youtube|par|pe|on|chalao|chala|karo|dikhao|dekhna|hai|वीडियो|चलाओ)\b/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!query) query = 'trending';
+        const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+        const reply = `YouTube par "${query}" video search kar raha hoon.`;
+        speak(reply);
+        addLog(cmd, reply, { label: `▶️ Watch "${query}" on YouTube`, href: ytUrl });
+        triggerAction(ytUrl, true);
+        return;
+      }
+
+      // 4. TIMER COMMAND
+      if (/\b(timer|alarm|टाइमर)\b/i.test(lower)) {
+        const numMatch = lower.match(/(\d+(?:\.\d+)?)/);
+        const mins = numMatch ? parseFloat(numMatch[1]) : 5;
+        startTimer(mins);
+        const reply = `${mins} minute ka timer set kar diya hai.`;
+        speak(reply);
+        addLog(cmd, reply);
+        return;
+      }
+
+      // 5. TIME / DATE COMMAND
+      if (/\b(time|samay|baje|date|tarikh|din|समय|तारीख)\b/i.test(lower)) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const reply = `Abhi samay ${timeStr} hai, aur aaj ${dateStr} hai.`;
+        speak(reply);
+        addLog(cmd, reply);
+        return;
+      }
+
+      // 6. FALLBACK: GOOGLE SEARCH
+      let searchQuery = cmd.replace(/\b(search|google|par|kya|hai|batao|karo)\b/gi, '').trim() || cmd;
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+      const reply = `"${searchQuery}" ke liye Google search khol raha hoon.`;
+      speak(reply);
+      addLog(cmd, reply, { label: `🔍 Search "${searchQuery}"`, href: searchUrl });
+      triggerAction(searchUrl, true);
+    }
+
+    // Speech Recognition Setup
+    function toggleListening() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        showToast('Aapke browser mein Voice Recognition supported nahi hai. Neeche type karke command dein.');
+        statusText.textContent = 'Browser mic unsupported — neeche command type karein';
+        return;
+      }
+
+      if (isListening && recognition) {
+        recognition.stop();
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.lang = langSelect.value || 'hi-IN';
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isListening = true;
+        orbContainer.classList.add('listening');
+        waveBars.classList.add('listening');
+        statusText.textContent = 'Sun raha hoon... Boliye!';
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcriptPreview.textContent = transcript;
+        if (event.results[event.results.length - 1].isFinal) {
+          processCommand(transcript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        statusText.textContent = 'Mic error: ' + event.error + ' (Type karke bhi chala sakte hain)';
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        orbContainer.classList.remove('listening');
+        waveBars.classList.remove('listening');
+        statusText.textContent = 'Mic dabaiye aur command boliye';
+      };
+
+      try {
+        recognition.start();
+      } catch (e) {
+        showToast('Mic start nahi ho paya.');
+      }
+    }
+
+    // Event Listeners
+    micBtn.addEventListener('click', toggleListening);
+
+    commandForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = commandInput.value.trim();
+      if (!val) return;
+      commandInput.value = '';
+      processCommand(val);
+    });
+
+    document.querySelectorAll('.quick-cmd').forEach(btn => {
+      btn.addEventListener('click', () => processCommand(btn.dataset.cmd));
+    });
+
+    ttsToggleBtn.addEventListener('click', () => {
+      ttsEnabled = !ttsEnabled;
+      ttsToggleBtn.textContent = ttsEnabled ? 'Voice Reply: ON' : 'Voice Reply: OFF';
+      ttsToggleBtn.className = ttsEnabled
+        ? 'text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/90 text-emerald-400 hover:bg-slate-700/80 transition'
+        : 'text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/90 text-slate-400 hover:bg-slate-700/80 transition';
+    });
+
+    clearLogBtn.addEventListener('click', () => {
+      logs = [];
+      renderLogs();
+    });
+
+    cancelTimerBtn.addEventListener('click', () => {
+      clearInterval(timerInterval);
+      timerBanner.classList.add('hidden');
+      showToast('Timer band kar diya gaya.');
+    });
+
+    // Tabs
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(b => {
+          b.className = b === btn
+            ? 'tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-indigo-600 text-white transition'
+            : 'tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition';
+        });
+        ['assistant', 'contacts', 'commands'].forEach(t => {
+          document.getElementById('tab-' + t).classList.toggle('hidden', t !== target);
+        });
+      });
+    });
+
+    // Contacts
+    contactForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = contactNameInput.value.trim();
+      const phone = contactPhoneInput.value.trim();
+      if (!name || !phone) return;
+      contacts.push({ id: 'c_' + Date.now(), name, phone });
+      saveContacts();
+      renderContacts();
+      contactNameInput.value = '';
+      contactPhoneInput.value = '';
+      showToast(`${name} contact save ho gaya!`);
+    });
+
+    contactsList.addEventListener('click', (e) => {
+      const btn = e.target.closest('.delete-contact-btn');
+      if (!btn) return;
+      const id = btn.dataset.deleteId;
+      contacts = contacts.filter(c => c.id !== id);
+      saveContacts();
+      renderContacts();
+      showToast('Contact delete ho gaya.');
+    });
+
+    // Init
+    contacts = loadContacts();
+    renderContacts();
+    renderLogs();
+  </script>
+</body>
+</html>
