@@ -12,7 +12,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Organize Android project files
+      - name: Organize and fix Android project files
         run: |
           mkdir -p app/src/main/java/com/aayush/voiceai
           mkdir -p app/src/main/res/layout
@@ -20,6 +20,13 @@ jobs:
           [ -f AndroidManifest.xml ] && mv AndroidManifest.xml app/src/main/
           [ -f MainActivity.kt ] && mv MainActivity.kt app/src/main/java/com/aayush/voiceai/
           [ -f activity_main.xml ] && mv activity_main.xml app/src/main/res/layout/
+          python3 -c '
+          import re
+          p = "app/src/main/java/com/aayush/voiceai/MainActivity.kt"
+          s = open(p).read()
+          s = re.sub(r"(?<!\\)\\([+dsDb])", r"\\\\\1", s)
+          open(p, "w").write(s)
+          '
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
